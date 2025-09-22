@@ -5,18 +5,17 @@ from os import listdir
 from os.path import isfile, join
 
 # Variables
-SCREEN_WIDTH = 800
-SCREEN_HEIGHT = 600
+WIDTH = 800
+HEIGHT = 600
 BG_COLOR = (255, 255, 255)
 FPS = 60
 PLAYER_VEL = 5
 
 # Initalize
 pygame.init()
-clock = pygame.time.Clock()
 
 # Create the screen
-window = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
+window = pygame.display.set_mode((WIDTH, HEIGHT))
 
 # Title and icon
 pygame.display.set_caption("Platformer")
@@ -26,8 +25,30 @@ pygame.display.set_caption("Platformer")
 # Function
 def get_background(name):
     image = pygame.image.load(join("assets", "Background", name))
+    _, _, width, height = image.get_rect()
+    tiles = []
+
+    for i in range(WIDTH // width + 1):
+        for j in range(HEIGHT // height + 1):
+            pos = (i * width, j * height)
+            tiles.append(pos)
+    
+    return tiles, image
+
+
+def draw(window, background, bg_image):
+    for tile in background:
+        window.blit(bg_image, tile)
+
+    pygame.display.update()
+
+
 
 def main(window):
+    clock = pygame.time.Clock()
+    background, bg_image = get_background("Blue.png")
+
+
     run = True
     while run == True:
         clock.tick(FPS)
@@ -36,6 +57,8 @@ def main(window):
             if event.type == pygame.QUIT:
                 run = False
                 break
+        
+        draw(window, background, bg_image)
     
 
 
