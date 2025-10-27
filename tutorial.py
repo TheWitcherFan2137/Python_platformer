@@ -112,7 +112,7 @@ class Player(pygame.sprite.Sprite):
         self.fall_count = 0
         self.y_vel = 0
         self.jump_count = 0
-        self.animation_count
+        self.animation_count = 0
 
 
     def hit_head(self):
@@ -192,7 +192,7 @@ def draw(window, background, bg_image, player, objects, offset_x):
     
     player.draw(window, offset_x)
 
-    pygame.display.update(player, objects, dx)
+    pygame.display.update()
 
 def handle_vertical_collision(player, objects, dy):
     collided_objects = []
@@ -214,11 +214,11 @@ def collide(player, objects, dx):
     player.update()
     collided_object = None
     for obj in objects:
-        if pygame.sprite.collide_mask(player, obj)
+        if pygame.sprite.collide_mask(player, obj):
         collided_object = obj
         break
 
-    player.move(- zdx, 0)
+    player.move(-dx, 0)
     player.update()
     return collided_object
 
@@ -227,7 +227,7 @@ def handle_move(player, objects):
 
     player.x_vel = 0
     collide_left = collide(player, objects, -PLAYER_VEL * 2)
-    collide_right = collide(player, objects PLAYER_VEL * 2)
+    collide_right = collide(player, objects, PLAYER_VEL * 2)
     
     if keys[pygame.K_LEFT] or keys[pygame.K_a]:
         player.move_left(PLAYER_VEL)
@@ -261,7 +261,7 @@ def main(window):
                 break
             
             if event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_SPACE or event.key == pygame.K_UP and player.jump_count < 2:
+                if (event.key == pygame.K_SPACE or event.key == pygame.K_UP) and player.jump_count < 2:
                     player.jump()
 
         player.loop(FPS)
