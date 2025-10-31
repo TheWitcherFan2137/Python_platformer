@@ -104,6 +104,7 @@ class Player(pygame.sprite.Sprite):
 
         if self.hit:
             self.hit_count += 1
+        #change this
         if self.hit_count > fps * 2:
             self.hit = False
             self.hit_count = 0
@@ -117,7 +118,6 @@ class Player(pygame.sprite.Sprite):
         self.jump_count = 0
 
     def hit_head(self):
-        self.count = 0
         self.y_vel *= -1
 
     def update_sprite(self):
