@@ -5,16 +5,13 @@ import pygame
 from os import listdir
 from os.path import isfile, join
 pygame.init()
+PIXEL_FONT = pygame.font.Font("assets/Fonts/pixel.ttf", 16)
 
 pygame.display.set_caption("Platformer")
 
-WIDTH, HEIGHT = 1200, 800
+WIDTH, HEIGHT = 1000, 800
 FPS = 60
 PLAYER_VEL = 5
-
-PIXEL_FONT = pygame.font.Font("assets/Fonts/pixel.ttf", 16)
-COLOR_WHITE = (0, 0, 0)
-COLOR_BLACK = (255, 255, 255)
 
 window = pygame.display.set_mode((WIDTH, HEIGHT))
 
@@ -23,7 +20,7 @@ def flip(sprites):
     return [pygame.transform.flip(sprite, True, False) for sprite in sprites]
 
 
-def load_sprite_sheets(dir1, dir2, width, height, direction=False, frames=None):
+def load_sprite_sheets(dir1, dir2, width, height, direction=False):
     path = join("assets", dir1, dir2)
     images = [f for f in listdir(path) if isfile(join(path, f))]
 
@@ -33,19 +30,11 @@ def load_sprite_sheets(dir1, dir2, width, height, direction=False, frames=None):
         sprite_sheet = pygame.image.load(join(path, image)).convert_alpha()
 
         sprites = []
-        if frames is not None:
-            frame_w = sprite_sheet.get_width() // frames
-            for i in range(frames):
-                surface = pygame.Surface((frame_w, height), pygame.SRCALPHA, 32)
-                rect = pygame.Rect(i * frame_w, 0, frame_w, height)
-                surface.blit(sprite_sheet, (0, 0), rect)
-                sprites.append(pygame.transform.scale2x(surface))
-        else:
-            for i in range(sprite_sheet.get_width() // width):
-                surface = pygame.Surface((width, height), pygame.SRCALPHA, 32)
-                rect = pygame.Rect(i * width, 0, width, height)
-                surface.blit(sprite_sheet, (0, 0), rect)
-                sprites.append(pygame.transform.scale2x(surface))
+        for i in range(sprite_sheet.get_width() // width):
+            surface = pygame.Surface((width, height), pygame.SRCALPHA, 32)
+            rect = pygame.Rect(i * width, 0, width, height)
+            surface.blit(sprite_sheet, (0, 0), rect)
+            sprites.append(pygame.transform.scale2x(surface))
 
         if direction:
             all_sprites[image.replace(".png", "") + "_right"] = sprites
@@ -65,8 +54,6 @@ def get_block(size):
     return pygame.transform.scale2x(surface)
 
 
-
-#=========Class=========#
 class Player(pygame.sprite.Sprite):
     COLOR = (255, 0, 0)
     GRAVITY = 1
@@ -118,12 +105,7 @@ class Player(pygame.sprite.Sprite):
 
         if self.hit:
             self.hit_count += 1
-<<<<<<< Updated upstream
-        #change this
         if self.hit_count > fps * 2:
-=======
-        if self.hit_count > fps:
->>>>>>> Stashed changes
             self.hit = False
             self.hit_count = 0
 
@@ -136,6 +118,7 @@ class Player(pygame.sprite.Sprite):
         self.jump_count = 0
 
     def hit_head(self):
+        self.count = 0
         self.y_vel *= -1
 
     def update_sprite(self):
@@ -169,7 +152,7 @@ class Player(pygame.sprite.Sprite):
 
 
 class Object(pygame.sprite.Sprite):
-    def __init__(self, x, y, width, height, name=None, frames=None):
+    def __init__(self, x, y, width, height, name=None):
         super().__init__()
         self.rect = pygame.Rect(x, y, width, height)
         self.image = pygame.Surface((width, height), pygame.SRCALPHA)
@@ -190,7 +173,7 @@ class Block(Object):
 
 
 class Fire(Object):
-    ANIMATION_DELAY = 5
+    ANIMATION_DELAY = 3
 
     def __init__(self, x, y, width, height):
         super().__init__(x, y, width, height, "fire")
@@ -208,71 +191,78 @@ class Fire(Object):
 
     def loop(self):
         sprites = self.fire[self.animation_name]
-        sprite_index = (self.animation_count // self.ANIMATION_DELAY) % len(sprites)
+        sprite_index = (self.animation_count //
+                        self.ANIMATION_DELAY) % len(sprites)
         self.image = sprites[sprite_index]
         self.animation_count += 1
 
         self.rect = self.image.get_rect(topleft=(self.rect.x, self.rect.y))
         self.mask = pygame.mask.from_surface(self.image)
 
-        if self.animation_count // self.ANIMATION_DELAY >= len(sprites):
+        if self.animation_count // self.ANIMATION_DELAY > len(sprites):
             self.animation_count = 0
 
 
 class Coin(Object):
-    ANIMATION_DELAY = 3
+    ANIMATION_DELAY = 0
 
     def __init__(self, x, y, width, height):
         super().__init__(x, y, width, height, "coin")
-        self.coin = load_sprite_sheets("Items", "Coins", width, height)
-        self.animation_name = "coin"
-        self.image = self.coin[self.animation_name][0]
+
+        path = os.path.join("assets", "Items", "Coins", "basic_coin.png")
+        self.image = pygame.image.load(path).convert_alpha()
+
+        surface = pygame.Surface(
+            (self.image.get_width(), self.image.get_height()), pygame.SRCALPHA)
+        surface.blit(self.image, (0, 0))
+        self.image = pygame.transform.scale(surface, (width * 2, height * 2))
+
         self.mask = pygame.mask.from_surface(self.image)
-        self.animation_count = 0
 
     def loop(self):
-        sprites = self.coin[self.animation_name]
-        sprite_index = (self.animation_count // self.ANIMATION_DELAY) % len(sprites)
-        self.image = sprites[sprite_index]
-        self.animation_count += 1
-
-        self.rect = self.image.get_rect(topleft=(self.rect.x, self.rect.y))
-        self.mask = pygame.mask.from_surface(self.image)
-
-        if self.animation_count // self.ANIMATION_DELAY >= len(sprites):
-            self.animation_count = 0
+        pass
 
 
 class Portal(Object):
-    ANIMATION_DELAY = 6
-
-    def __init__(self, x, y, width, height):
+    def __init__(self, x, y, width, height, target_x, target_y):
         super().__init__(x, y, width, height, "portal")
-        self.portal = load_sprite_sheets("Items", "Portals", width, height, False, 8)
-        self.image = self.portal["idle"][0]
-        self.mask = pygame.mask.from_surface(self.image)
+        self.target_x = target_x
+        self.target_y = target_y
         self.animation_count = 0
-        self.animation_name = "idle"
 
-    def appear(self):
-        self.animation_name = "appear"
-
-    def disappear(self):
-        self.animation_name = "disappear"
+        self.image = pygame.Surface((width, height), pygame.SRCALPHA)
+        self.mask = pygame.mask.from_surface(self.image)
 
     def loop(self):
-        sprites = self.portal[self.animation_name]
-        sprite_index = (self.animation_count // self.ANIMATION_DELAY) % len(sprites)
-        self.image = sprites[sprite_index]
         self.animation_count += 1
+        pulse = 60 + int(20 * math.sin(self.animation_count * 0.1))
 
-        self.rect = self.image.get_rect(topleft=(self.rect.x, self.rect.y))
+        self.image.fill((0, 0, 0, 0))
+
+        color = (180, 0, 255)
+        rect = (0, 0, self.width, self.height)
+
+        pygame.draw.ellipse(
+            self.image, (color[0], color[1], color[2], 120), rect)
+
+        pygame.draw.ellipse(self.image, (255, 255, 255, 200), rect, 2)
+
+        scale = 1 + 0.05 * math.sin(self.animation_count * 0.2)
+        scaled = pygame.transform.scale(
+            self.image, (int(self.width * scale), int(self.height * scale))
+        )
+        self.image = scaled
+
         self.mask = pygame.mask.from_surface(self.image)
 
-        if self.animation_count // self.ANIMATION_DELAY >= len(sprites):
-            self.animation_count = 0
+    def teleport(self, player):
+        player.rect.x = self.target_x
+        player.rect.y = self.target_y
 
-#=======Function========#
+    def draw(self, win, offset_x):
+        win.blit(self.image, (self.rect.x - offset_x, self.rect.y))
+
+
 def get_background(name):
     image = pygame.image.load(join("assets", "Background", name))
     _, _, width, height = image.get_rect()
@@ -286,7 +276,7 @@ def get_background(name):
     return tiles, image
 
 
-def draw(window, background, bg_image, player, objects, offset_x, score):
+def draw(window, background, bg_image, player, objects, offset_x, score, font):
     for tile in background:
         window.blit(bg_image, tile)
 
@@ -295,10 +285,10 @@ def draw(window, background, bg_image, player, objects, offset_x, score):
 
     player.draw(window, offset_x)
 
-    shadow = PIXEL_FONT.render("COINS: " + str(score), False, (COLOR_WHITE))
+    score_text = PIXEL_FONT.render(f"SCORE: {score}", False, (255, 255, 255))
+    window.blit(score_text, (10, 10))
+    shadow = PIXEL_FONT.render(f"SCORE: {score}", False, (0, 0, 0))
     window.blit(shadow, (12, 12))
-
-    score_text = PIXEL_FONT.render("COINS: " + str(score), False, (COLOR_BLACK))
     window.blit(score_text, (10, 10))
 
     pygame.display.update()
@@ -307,16 +297,17 @@ def draw(window, background, bg_image, player, objects, offset_x, score):
 def handle_vertical_collision(player, objects, dy):
     collided_objects = []
     for obj in objects:
-        if obj.name != "coin" and pygame.sprite.collide_mask(player, obj):
+        if obj.name == "coin":
+            continue
+
+        if pygame.sprite.collide_mask(player, obj):
             if dy > 0:
                 player.rect.bottom = obj.rect.top
                 player.landed()
             elif dy < 0:
                 player.rect.top = obj.rect.bottom
                 player.hit_head()
-
             collided_objects.append(obj)
-
     return collided_objects
 
 
@@ -328,7 +319,6 @@ def collide(player, objects, dx):
         if pygame.sprite.collide_mask(player, obj):
             collided_object = obj
             break
-
     player.move(-dx, 0)
     player.update()
     return collided_object
@@ -341,9 +331,9 @@ def handle_move(player, objects):
     collide_left = collide(player, objects, -PLAYER_VEL * 2)
     collide_right = collide(player, objects, PLAYER_VEL * 2)
 
-    if keys[pygame.K_LEFT] or keys[pygame.K_a] and not collide_left:
+    if keys[pygame.K_LEFT] and not collide_left:
         player.move_left(PLAYER_VEL)
-    if keys[pygame.K_RIGHT] or keys[pygame.K_d] and not collide_right:
+    if keys[pygame.K_RIGHT] and not collide_right:
         player.move_right(PLAYER_VEL)
 
     vertical_collide = handle_vertical_collision(player, objects, player.y_vel)
@@ -354,53 +344,34 @@ def handle_move(player, objects):
             player.make_hit()
 
 
-def collect_coins(player, objects):
-    to_remove = []
-    collected = 0
-
-    for obj in objects:
-        if getattr(obj, "name", None) == "coin" and getattr(obj, "mask", None) and getattr(player, "mask", None):
-            if pygame.sprite.collide_mask(player, obj):
-                to_remove.append(obj)
-                collected += 1
-    
-    for obj in to_remove:
-        try:
-            objects.remove(obj)
-        except ValueError:
-            pass
-
-    return collected
-
-
 def main(window):
     clock = pygame.time.Clock()
     background, bg_image = get_background("Blue.png")
 
     block_size = 96
 
-    player = Player(20, 600, 50, 50)
-
-
+    player = Player(100, 100, 50, 50)
     fire = Fire(100, HEIGHT - block_size - 64, 16, 32)
     fire.on()
 
-    coins = [Coin(400, HEIGHT - block_size * 3 - 64, 16, 16),
-             Coin(700, HEIGHT - block_size - 80, 16, 16)]
-    portals = [Portal(450, HEIGHT - block_size * 2 - 30, 60, 80)]
+    coin1 = Coin(400, HEIGHT - block_size * 3 - 64, 16, 16)
+    coin2 = Coin(700, HEIGHT - block_size - 80, 16, 16)
+
+    portal1 = Portal(500, HEIGHT - block_size * 2 - 60,
+                     60, 80, 200, HEIGHT - block_size * 4)
 
     floor = [Block(i * block_size, HEIGHT - block_size, block_size)
              for i in range(-WIDTH // block_size, (WIDTH * 2) // block_size)]
-    
-    vertical_blocks = [Block(block_size*6, HEIGHT - block_size*n, block_size) for n in range(2, 10)]
-    additional_objects = [*floor, Block(0, HEIGHT - block_size * 2, block_size),
+
+    objects = [*floor,
+               Block(0, HEIGHT - block_size * 2, block_size),
                Block(block_size * 3, HEIGHT - block_size * 4, block_size),
-               fire]
-    objects = vertical_blocks + additional_objects + coins + portals
+               fire, coin1, coin2, portal1]
 
     offset_x = 0
-    scroll_area_width = 400
+    scroll_area_width = 200
     score = 0
+    font = pygame.font.SysFont("Arial", 30)
 
     run = True
     while run:
@@ -416,13 +387,25 @@ def main(window):
                     player.jump()
 
         player.loop(FPS)
+        fire.loop()
+
         for obj in objects:
-            if hasattr(obj, "loop"):
+            if obj.name == "coin":
                 obj.loop()
+            elif obj.name == "portal":
+                obj.loop()
+                if pygame.sprite.collide_mask(player, obj):
+                    obj.teleport(player)
 
         handle_move(player, objects)
-        score += collect_coins(player, objects)
-        draw(window, background, bg_image, player, objects, offset_x, score)
+
+        for obj in objects[:]:
+            if obj.name == "coin" and pygame.sprite.collide_mask(player, obj):
+                objects.remove(obj)
+                score += 1
+
+        draw(window, background, bg_image, player,
+             objects, offset_x, score, font)
 
         if ((player.rect.right - offset_x >= WIDTH - scroll_area_width) and player.x_vel > 0) or (
                 (player.rect.left - offset_x <= scroll_area_width) and player.x_vel < 0):
