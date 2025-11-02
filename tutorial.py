@@ -13,8 +13,8 @@ FPS = 60
 PLAYER_VEL = 5
 
 PIXEL_FONT = pygame.font.Font("assets/Fonts/pixel.ttf", 16)
-COLOR_WHITE = (0, 0, 0)
-COLOR_BLACK = (255, 255, 255)
+COLOR_BLACK = (0, 0, 0)
+COLOR_WHITE = (255, 255, 255)
 
 window = pygame.display.set_mode((WIDTH, HEIGHT))
 
@@ -85,6 +85,9 @@ class Player(pygame.sprite.Sprite):
         self.jump_count = 0
         self.hit = False
         self.hit_count = 0
+        self.appearing = False
+        self.disappearing = False
+
 
     def jump(self):
         self.y_vel = -self.GRAVITY * 8
@@ -99,6 +102,21 @@ class Player(pygame.sprite.Sprite):
 
     def make_hit(self):
         self.hit = True
+
+    def start_teleport(self, portal_from, portal_to):
+        self.disappearing = True
+        self.appearing = False
+        self.animation_count = 0
+
+        # określamy kierunek teleportu
+        if self.rect.centerx < portal_from.rect.centerx:
+            self.teleport_target = (portal_to.rect.right + 5, portal_to.rect.y)  # pojawi się po prawej
+        else:
+            self.teleport_target = (portal_to.rect.x - self.rect.width - 5, portal_to.rect.y)  # pojawi się po lewej
+
+        portal_from.mask = None
+
+
 
     def move_left(self, vel):
         self.x_vel = -vel
@@ -118,16 +136,25 @@ class Player(pygame.sprite.Sprite):
 
         if self.hit:
             self.hit_count += 1
-<<<<<<< Updated upstream
-        #change this
-        if self.hit_count > fps * 2:
-=======
         if self.hit_count > fps:
->>>>>>> Stashed changes
             self.hit = False
             self.hit_count = 0
 
         self.fall_count += 1
+        
+        if self.disappearing:
+            self.animation_count += 1
+            if self.animation_count >= 21:
+                self.disappearing = False
+                self.rect.topleft = self.teleport_target
+                self.animation_count = 0
+                self.appearing = True
+        elif self.appearing:
+            self.animation_count += 1
+            if self.animation_count >= 21:
+                self.appearing = False
+                self.animation_count = 0
+
         self.update_sprite()
 
     def landed(self):
@@ -140,7 +167,9 @@ class Player(pygame.sprite.Sprite):
 
     def update_sprite(self):
         sprite_sheet = "idle"
-        if self.hit:
+        if self.disappearing:
+            sprite_sheet = "disappearing"
+        elif self.hit:
             sprite_sheet = "hit"
         elif self.y_vel < 0:
             if self.jump_count == 1:
@@ -154,8 +183,11 @@ class Player(pygame.sprite.Sprite):
 
         sprite_sheet_name = sprite_sheet + "_" + self.direction
         sprites = self.SPRITES[sprite_sheet_name]
-        sprite_index = (self.animation_count //
-                        self.ANIMATION_DELAY) % len(sprites)
+        if self.disappearing:
+            sprite_index = min(self.animation_count // self.ANIMATION_DELAY, len(sprites) - 1)
+        else:
+            sprite_index = (self.animation_count //
+                            self.ANIMATION_DELAY) % len(sprites)
         self.sprite = sprites[sprite_index]
         self.animation_count += 1
         self.update()
@@ -272,6 +304,8 @@ class Portal(Object):
         if self.animation_count // self.ANIMATION_DELAY >= len(sprites):
             self.animation_count = 0
 
+
+
 #=======Function========#
 def get_background(name):
     image = pygame.image.load(join("assets", "Background", name))
@@ -295,10 +329,10 @@ def draw(window, background, bg_image, player, objects, offset_x, score):
 
     player.draw(window, offset_x)
 
-    shadow = PIXEL_FONT.render("COINS: " + str(score), False, (COLOR_WHITE))
+    shadow = PIXEL_FONT.render("COINS: " + str(score), False, (COLOR_BLACK))
     window.blit(shadow, (12, 12))
 
-    score_text = PIXEL_FONT.render("COINS: " + str(score), False, (COLOR_BLACK))
+    score_text = PIXEL_FONT.render("COINS: " + str(score), False, (COLOR_WHITE))
     window.blit(score_text, (10, 10))
 
     pygame.display.update()
@@ -334,24 +368,27 @@ def collide(player, objects, dx):
     return collided_object
 
 
-def handle_move(player, objects):
+def handle_move(player, objects, portal1, portal2):
     keys = pygame.key.get_pressed()
 
     player.x_vel = 0
     collide_left = collide(player, objects, -PLAYER_VEL * 2)
     collide_right = collide(player, objects, PLAYER_VEL * 2)
-
-    if keys[pygame.K_LEFT] or keys[pygame.K_a] and not collide_left:
+    if (keys[pygame.K_LEFT] or keys[pygame.K_a]) and not collide_left:
         player.move_left(PLAYER_VEL)
-    if keys[pygame.K_RIGHT] or keys[pygame.K_d] and not collide_right:
+    if (keys[pygame.K_RIGHT] or keys[pygame.K_d]) and not collide_right:
         player.move_right(PLAYER_VEL)
 
     vertical_collide = handle_vertical_collision(player, objects, player.y_vel)
     to_check = [collide_left, collide_right, *vertical_collide]
 
     for obj in to_check:
-        if obj and obj.name == "fire":
-            player.make_hit()
+        if obj:
+            if obj.name  == "fire":
+                player.make_hit()
+            elif obj.name == "portal" and not player.disappearing:
+                target_portal = portal2 if obj == portal1 else portal1
+                player.start_teleport(obj, target_portal)
 
 
 def collect_coins(player, objects):
@@ -373,12 +410,7 @@ def collect_coins(player, objects):
     return collected
 
 
-def main(window):
-    clock = pygame.time.Clock()
-    background, bg_image = get_background("Blue.png")
-
-    block_size = 96
-
+def generate_world(width, height, block_size):
     player = Player(20, 600, 50, 50)
 
 
@@ -387,7 +419,8 @@ def main(window):
 
     coins = [Coin(400, HEIGHT - block_size * 3 - 64, 16, 16),
              Coin(700, HEIGHT - block_size - 80, 16, 16)]
-    portals = [Portal(450, HEIGHT - block_size * 2 - 30, 60, 80)]
+    portal1 = Portal(450, HEIGHT - block_size * 2 - 30, 60, 80)
+    portal2 = Portal(700, HEIGHT - block_size * 2 - 30, 60, 80)
 
     floor = [Block(i * block_size, HEIGHT - block_size, block_size)
              for i in range(-WIDTH // block_size, (WIDTH * 2) // block_size)]
@@ -396,8 +429,18 @@ def main(window):
     additional_objects = [*floor, Block(0, HEIGHT - block_size * 2, block_size),
                Block(block_size * 3, HEIGHT - block_size * 4, block_size),
                fire]
-    objects = vertical_blocks + additional_objects + coins + portals
+    objects = vertical_blocks + additional_objects + coins + [portal1, portal2]
 
+    return player, objects, portal1, portal2
+
+
+def main(window):
+    clock = pygame.time.Clock()
+    background, bg_image = get_background("Blue.png")
+
+    block_size = 96
+
+    player, objects, portal1, portal2 = generate_world(WIDTH, HEIGHT, block_size)
     offset_x = 0
     scroll_area_width = 400
     score = 0
@@ -420,7 +463,7 @@ def main(window):
             if hasattr(obj, "loop"):
                 obj.loop()
 
-        handle_move(player, objects)
+        handle_move(player, objects, portal1, portal2)
         score += collect_coins(player, objects)
         draw(window, background, bg_image, player, objects, offset_x, score)
 
