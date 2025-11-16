@@ -103,20 +103,13 @@ class Player(pygame.sprite.Sprite):
     def make_hit(self):
         self.hit = True
 
-    def start_teleport(self, portal_from, portal_to):
+    def start_teleport(self, portal):
         self.disappearing = True
         self.appearing = False
         self.animation_count = 0
+        self.teleport_target = (portal.target_x, portal.target_y)
 
-        # określamy kierunek teleportu
-        if self.rect.centerx < portal_from.rect.centerx:
-            self.teleport_target = (portal_to.rect.right + 5, portal_to.rect.y)  # pojawi się po prawej
-        else:
-            self.teleport_target = (portal_to.rect.x - self.rect.width - 5, portal_to.rect.y)  # pojawi się po lewej
-
-        portal_from.mask = None
-
-
+        portal.mask = None
 
     def move_left(self, vel):
         self.x_vel = -vel
@@ -278,13 +271,23 @@ class Coin(Object):
 class Portal(Object):
     ANIMATION_DELAY = 6
 
-    def __init__(self, x, y, width, height):
+    def __init__(self, x, y, width, height, target_x, target_y, flip_horizontal=False):
         super().__init__(x, y, width, height, "portal")
         self.portal = load_sprite_sheets("Items", "Portals", width, height, False, 8)
         self.image = self.portal["idle"][0]
-        self.mask = pygame.mask.from_surface(self.image)
         self.animation_count = 0
         self.animation_name = "idle"
+        self.target_x = target_x
+        self.target_y = target_y
+        self.flip_horizontal = flip_horizontal
+
+        self.collision_rect = pygame.Rect(
+            x + 20,
+            y + 10,
+            width - 40,
+            height - 20
+        )
+        
 
     def appear(self):
         self.animation_name = "appear"
@@ -297,9 +300,6 @@ class Portal(Object):
         sprite_index = (self.animation_count // self.ANIMATION_DELAY) % len(sprites)
         self.image = sprites[sprite_index]
         self.animation_count += 1
-
-        self.rect = self.image.get_rect(topleft=(self.rect.x, self.rect.y))
-        self.mask = pygame.mask.from_surface(self.image)
 
         if self.animation_count // self.ANIMATION_DELAY >= len(sprites):
             self.animation_count = 0
@@ -341,30 +341,29 @@ def draw(window, background, bg_image, player, objects, offset_x, score):
 def handle_vertical_collision(player, objects, dy):
     collided_objects = []
     for obj in objects:
-        if obj.name != "coin" and pygame.sprite.collide_mask(player, obj):
-            if dy > 0:
-                player.rect.bottom = obj.rect.top
-                player.landed()
-            elif dy < 0:
-                player.rect.top = obj.rect.bottom
-                player.hit_head()
+        if obj.name != "coin":
+            if player.rect.colliderect(obj.rect):
+                if dy > 0:
+                    player.rect.bottom = obj.rect.top
+                    player.landed()
+                elif dy < 0:
+                    player.rect.top = obj.rect.bottom
+                    player.hit_head()
 
-            collided_objects.append(obj)
+                collided_objects.append(obj)
 
     return collided_objects
 
 
 def collide(player, objects, dx):
     player.move(dx, 0)
-    player.update()
     collided_object = None
     for obj in objects:
-        if pygame.sprite.collide_mask(player, obj):
+        if player.rect.colliderect(obj.rect):
             collided_object = obj
             break
 
     player.move(-dx, 0)
-    player.update()
     return collided_object
 
 
@@ -387,8 +386,7 @@ def handle_move(player, objects, portal1, portal2):
             if obj.name  == "fire":
                 player.make_hit()
             elif obj.name == "portal" and not player.disappearing:
-                target_portal = portal2 if obj == portal1 else portal1
-                player.start_teleport(obj, target_portal)
+                player.start_teleport(obj)
 
 
 def collect_coins(player, objects):
@@ -418,17 +416,20 @@ def generate_world(width, height, block_size):
     fire.on()
 
     coins = [Coin(400, HEIGHT - block_size * 3 - 64, 16, 16),
-             Coin(700, HEIGHT - block_size - 80, 16, 16)]
-    portal1 = Portal(450, HEIGHT - block_size * 2 - 30, 60, 80)
-    portal2 = Portal(700, HEIGHT - block_size * 2 - 30, 60, 80)
+             Coin(700, HEIGHT - block_size * 2 - 80, 16, 16)]
+    
+    portal1 = Portal(450, HEIGHT - block_size * 2 - 30, 60, 80, 800, HEIGHT - block_size * 5, flip_horizontal=True)
+    portal2 = Portal(650, HEIGHT - block_size * 5 - 30, 60, 80, 375, HEIGHT - block_size * 2)
 
     floor = [Block(i * block_size, HEIGHT - block_size, block_size)
              for i in range(-WIDTH // block_size, (WIDTH * 2) // block_size)]
     
     vertical_blocks = [Block(block_size*6, HEIGHT - block_size*n, block_size) for n in range(2, 10)]
-    additional_objects = [*floor, Block(0, HEIGHT - block_size * 2, block_size),
-               Block(block_size * 3, HEIGHT - block_size * 4, block_size),
-               fire]
+    additional_objects = [*floor, Block(0, HEIGHT - block_size * 2, block_size), 
+                          Block(block_size * 3, HEIGHT - block_size * 4, block_size), 
+                          Block(block_size * 7, HEIGHT - block_size * 4, block_size),
+                          Block(block_size * 8, HEIGHT - block_size * 4, block_size),
+                          Block(block_size * 12, HEIGHT - block_size * 3, block_size), fire]
     objects = vertical_blocks + additional_objects + coins + [portal1, portal2]
 
     return player, objects, portal1, portal2
