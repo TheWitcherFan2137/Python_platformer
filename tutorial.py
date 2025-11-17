@@ -70,6 +70,9 @@ def get_block(size):
 class Player(pygame.sprite.Sprite):
     COLOR = (255, 0, 0)
     GRAVITY = 1
+    ON_WALL_GRAVITY = 0.3
+    WALL_JUMP_VEL_X = 7
+    WALL_JUMP_VEL_Y = -12
     SPRITES = load_sprite_sheets("MainCharacters", "MaskDude", 32, 32, True)
     ANIMATION_DELAY = 3
 
@@ -87,6 +90,15 @@ class Player(pygame.sprite.Sprite):
         self.hit_count = 0
         self.appearing = False
         self.disappearing = False
+        self.on_wall = False
+        self.wall_dir = 0  # -1 = lewa ściana, 1 = prawa ściana
+
+    def wall_jump(self):
+        if self.on_wall:
+            self.y_vel = self.WALL_JUMP_VEL_Y
+            self.x_vel = self.WALL_JUMP_VEL_X * (-self.wall_dir)
+            self.on_wall = False
+            self.jump_count = 1
 
 
     def jump(self):
@@ -369,24 +381,45 @@ def collide(player, objects, dx):
 
 def handle_move(player, objects, portal1, portal2):
     keys = pygame.key.get_pressed()
-
     player.x_vel = 0
     collide_left = collide(player, objects, -PLAYER_VEL * 2)
     collide_right = collide(player, objects, PLAYER_VEL * 2)
+
+    # ruch w poziomie
     if (keys[pygame.K_LEFT] or keys[pygame.K_a]) and not collide_left:
         player.move_left(PLAYER_VEL)
     if (keys[pygame.K_RIGHT] or keys[pygame.K_d]) and not collide_right:
         player.move_right(PLAYER_VEL)
 
+    # sprawdzamy kolizję pionową
     vertical_collide = handle_vertical_collision(player, objects, player.y_vel)
-    to_check = [collide_left, collide_right, *vertical_collide]
 
+    # sprawdzamy ściany
+    player.on_wall = False
+    if not vertical_collide:
+        if collide_left:
+            player.on_wall = True
+            player.wall_dir = -1
+            player.y_vel = min(player.y_vel, Player.ON_WALL_GRAVITY * 10)
+        elif collide_right:
+            player.on_wall = True
+            player.wall_dir = 1
+            player.y_vel = min(player.y_vel, Player.ON_WALL_GRAVITY * 10)
+
+    to_check = [collide_left, collide_right, *vertical_collide]
     for obj in to_check:
         if obj:
-            if obj.name  == "fire":
+            if obj.name == "fire":
                 player.make_hit()
             elif obj.name == "portal" and not player.disappearing:
                 player.start_teleport(obj)
+
+    # skok z wall jump
+    if keys[pygame.K_SPACE] and player.jump_count < 2:
+        if player.on_wall:
+            player.wall_jump()
+        else:
+            player.jump()
 
 
 def collect_coins(player, objects):
