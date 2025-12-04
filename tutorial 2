@@ -6,18 +6,15 @@ from os import listdir
 from os.path import isfile, join
 pygame.init()
 
-pygame.display.set_caption("Pixel Climber")
-icon = pygame.image.load("assets/Items/Checkpoints/End/End.png")
-pygame.display.set_icon(icon)
+pygame.display.set_caption("Platformer")
 
 WIDTH, HEIGHT = 1200, 800
 FPS = 60
 PLAYER_VEL = 5
 
 PIXEL_FONT = pygame.font.Font("assets/Fonts/pixel.ttf", 16)
-PIXEL_FONT_MEDIUM = pygame.font.Font("assets/Fonts/pixel.ttf", 32)
 PIXEL_FONT_LARGE = pygame.font.Font("assets/Fonts/pixel.ttf", 48)
-
+PIXEL_FONT_MEDIUM = pygame.font.Font("assets/Fonts/pixel.ttf", 32)
 COLOR_BLACK = (0, 0, 0)
 COLOR_WHITE = (255, 255, 255)
 COLOR_YELLOW = (255, 255, 0)
@@ -41,15 +38,15 @@ def load_sprite_sheets(dir1, dir2, width, height, direction=False, frames=None):
 
         sprites = []
         if frames is not None:
-            frame_w = sprite_sheet.get_width() / frames
+            frame_w = sprite_sheet.get_width() // frames
             for i in range(frames):
-                surface = pygame.Surface((int(frame_w), height), pygame.SRCALPHA)
-                rect = pygame.Rect(int(i * frame_w), 0, int(frame_w), height)
+                surface = pygame.Surface((frame_w, height), pygame.SRCALPHA, 32)
+                rect = pygame.Rect(i * frame_w, 0, frame_w, height)
                 surface.blit(sprite_sheet, (0, 0), rect)
                 sprites.append(pygame.transform.scale2x(surface))
         else:
             for i in range(sprite_sheet.get_width() // width):
-                surface = pygame.Surface((width, height), pygame.SRCALPHA)
+                surface = pygame.Surface((width, height), pygame.SRCALPHA, 32)
                 rect = pygame.Rect(i * width, 0, width, height)
                 surface.blit(sprite_sheet, (0, 0), rect)
                 sprites.append(pygame.transform.scale2x(surface))
@@ -72,16 +69,26 @@ def get_block(size):
     return pygame.transform.scale2x(surface)
 
 
+def get_background(name):
+    image = pygame.image.load(os.path.join("assets", "Background", name)).convert()
+    bg_width = image.get_width()
+    bg_height = image.get_height()
+    tiles = []
+    for i in range(WIDTH // bg_width + 2):
+        for j in range(HEIGHT // bg_height + 2):
+            tiles.append((i * bg_width, j * bg_height))
+    return tiles, image
+
 
 #=========Class=========#
 class Player(pygame.sprite.Sprite):
     COLOR = (255, 0, 0)
     GRAVITY = 1
-    SPRITES = load_sprite_sheets("MainCharacters", "MaskDude", 32, 32, True)
     ANIMATION_DELAY = 3
 
     def __init__(self, x, y, width, height):
         super().__init__()
+        self.SPRITES = load_sprite_sheets("MainCharacters", "MaskDude", 32, 32, True)
         self.rect = pygame.Rect(x, y, width, height)
         self.x_vel = 0
         self.y_vel = 0
@@ -94,7 +101,11 @@ class Player(pygame.sprite.Sprite):
         self.hit_count = 0
         self.appearing = False
         self.disappearing = False
-        self.fade_alpha = 0 
+        self.health = 3
+        self.max_health = 3
+        self.invincible = False
+        self.invincible_count = 0
+
 
     def jump(self):
         self.y_vel = -self.GRAVITY * 8
@@ -109,12 +120,17 @@ class Player(pygame.sprite.Sprite):
 
     def make_hit(self):
         self.hit = True
+        self.health -= 1
+        self.invincible = True
+        self.invincible_count = 0
 
     def start_teleport(self, portal):
         self.disappearing = True
         self.appearing = False
         self.animation_count = 0
         self.teleport_target = (portal.target_x, portal.target_y)
+
+        portal.mask = None
 
     def move_left(self, vel):
         self.x_vel = -vel
@@ -128,20 +144,45 @@ class Player(pygame.sprite.Sprite):
             self.direction = "right"
             self.animation_count = 0
 
+    def loop(self, fps):
+        self.y_vel += min(1, (self.fall_count / fps) * self.GRAVITY)
+        self.move(self.x_vel, self.y_vel)
+
+        if self.hit:
+            self.hit_count += 1
+            if self.hit_count > fps:
+                self.hit = False
+                self.hit_count = 0
+
+        self.fall_count += 1
+        
+        if self.disappearing:
+            self.animation_count += 1
+            if self.animation_count >= 21:
+                self.disappearing = False
+                self.rect.topleft = self.teleport_target
+                self.animation_count = 0
+                self.appearing = True
+        elif self.appearing:
+            self.animation_count += 1
+            if self.animation_count >= 21:
+                self.appearing = False
+                self.animation_count = 0
+
+        self.update_sprite()
+
     def landed(self):
         self.fall_count = 0
         self.y_vel = 0
         self.jump_count = 0
 
     def hit_head(self):
-        self.y_vel *= -0.5
+        self.y_vel *= -1
 
     def update_sprite(self):
         sprite_sheet = "idle"
         if self.disappearing:
             sprite_sheet = "disappearing"
-        elif self.appearing:
-            sprite_sheet = "appearing"
         elif self.hit:
             sprite_sheet = "hit"
         elif self.y_vel < 0:
@@ -156,9 +197,12 @@ class Player(pygame.sprite.Sprite):
 
         sprite_sheet_name = sprite_sheet + "_" + self.direction
         sprites = self.SPRITES[sprite_sheet_name]
-        sprite_index = (self.animation_count // self.ANIMATION_DELAY) % len(sprites)
+        if self.disappearing:
+            sprite_index = min(self.animation_count // self.ANIMATION_DELAY, len(sprites) - 1)
+        else:
+            sprite_index = (self.animation_count //
+                            self.ANIMATION_DELAY) % len(sprites)
         self.sprite = sprites[sprite_index]
-
         self.animation_count += 1
         self.update()
 
@@ -167,39 +211,10 @@ class Player(pygame.sprite.Sprite):
         self.mask = pygame.mask.from_surface(self.sprite)
 
     def draw(self, win, offset_x):
+        # Miganie tylko podczas animacji hit, nie przez cały czas nietykalności
+        if self.hit and (self.hit_count // 5) % 2 == 1:
+            return
         win.blit(self.sprite, (self.rect.x - offset_x, self.rect.y))
-
-    def loop(self, fps):
-        self.y_vel += min(1, (self.fall_count / fps) * self.GRAVITY)
-        self.move(self.x_vel, self.y_vel)
-
-        if self.hit:
-            self.hit_count += 1
-        if self.hit_count > fps:
-            self.hit = False
-            self.hit_count = 0
-
-        self.fall_count += 1
-        
-        if self.disappearing:
-            self.fade_alpha = min(255, self.fade_alpha + 15)
-            self.animation_count += 1
-            if self.animation_count >= 21:
-                self.disappearing = False
-                self.rect.topleft = self.teleport_target
-                self.animation_count = 0
-                self.appearing = True
-
-        elif self.appearing:
-            self.fade_alpha = max(0, self.fade_alpha - 15)
-            self.animation_count += 1
-            if self.animation_count >= 21:
-                self.appearing = False
-                self.animation_count = 0
-        else:
-            self.fade_alpha = 0
-
-        self.update_sprite()
 
 
 class Object(pygame.sprite.Sprite):
@@ -224,7 +239,7 @@ class Block(Object):
 
 
 class Fire(Object):
-    ANIMATION_DELAY = 6
+    ANIMATION_DELAY = 9
 
     def __init__(self, x, y, width, height):
         super().__init__(x, y, width, height, "fire")
@@ -289,13 +304,12 @@ class Portal(Object):
         self.target_x = target_x
         self.target_y = target_y
         self.flip_horizontal = flip_horizontal
-        self.rect = self.image.get_rect(topleft=(x, y))
 
         self.collision_rect = pygame.Rect(
-            self.rect.centerx - 15,
-            self.rect.y + 10,
-            30,
-            self.rect.height -20
+            x + 20,
+            y + 10,
+            width - 40,
+            height - 20
         )
         
 
@@ -314,46 +328,45 @@ class Portal(Object):
         if self.animation_count // self.ANIMATION_DELAY >= len(sprites):
             self.animation_count = 0
 
-        self.collision_rect.center = self.rect.center
+
+def draw_heart(surface, x, y, filled=True):
+    """Rysuje pikselowe serce"""
+    heart_pixels = [
+        [0,0,1,1,1,0,0,0,1,1,1,0,0],
+        [0,1,1,1,1,1,0,1,1,1,1,1,0],
+        [1,1,1,1,1,1,1,1,1,1,1,1,1],
+        [1,1,1,1,1,1,1,1,1,1,1,1,1],
+        [1,1,1,1,1,1,1,1,1,1,1,1,1],
+        [0,1,1,1,1,1,1,1,1,1,1,1,0],
+        [0,0,1,1,1,1,1,1,1,1,1,0,0],
+        [0,0,0,1,1,1,1,1,1,1,0,0,0],
+        [0,0,0,0,1,1,1,1,1,0,0,0,0],
+        [0,0,0,0,0,1,1,1,0,0,0,0,0],
+        [0,0,0,0,0,0,1,0,0,0,0,0,0],
+    ]
+    
+    pixel_size = 2
+    color = (255, 0, 0) if filled else (100, 100, 100)
+    
+    for row_idx, row in enumerate(heart_pixels):
+        for col_idx, pixel in enumerate(row):
+            if pixel == 1:
+                pygame.draw.rect(surface, color, 
+                               (x + col_idx * pixel_size, 
+                                y + row_idx * pixel_size, 
+                                pixel_size, pixel_size))
 
 
-class Hearts:
-    def __init__(self, x, y, hearts=3):
-        self.x = x
-        self.y = y
-        self.max_hearts = hearts
-        self.current_health = hearts * 2
-        self.dead = False
-        self.sprites = load_sprite_sheets("Menu", "Hearts", 32, 32, False, 3)["PixelHeart16"]
-
-    def set_health(self, hp):
-        self.current_health = max(0, min(hp, self.max_hearts * 2))
-
-    def draw(self, win):
-        for i in range(self.max_hearts):
-            heart_x = self.x + i * 40
-            heart_value = self.current_health - i * 2
-
-            if heart_value >= 2:
-                sprite = self.sprites[0]
-            elif heart_value == 1:
-                sprite = self.sprites[1]
-            else:
-                sprite = self.sprites[2]
-
-            win.blit(sprite, (heart_x, self.y))
-
-    def check_death(self):
-        if self.current_health <= 0:
-            self.dead = True
-
-
-
-#=======Function========#
 def draw_game_over(window, background, bg_image, score):
-    go_bg_tiles, go_bg_img = get_background("Gray.png")
-    for tile in go_bg_tiles:
-        window.blit(go_bg_img, tile)
+    """Rysuje ekran Game Over"""
+    for tile in background:
+        window.blit(bg_image, tile)
+    
+    # Półprzezroczyste tło
+    overlay = pygame.Surface((WIDTH, HEIGHT))
+    overlay.set_alpha(180)
+    overlay.fill((0, 0, 0))
+    window.blit(overlay, (0, 0))
     
     # Tekst GAME OVER
     game_over_shadow = PIXEL_FONT_LARGE.render("GAME OVER", False, COLOR_BLACK)
@@ -370,8 +383,8 @@ def draw_game_over(window, background, bg_image, score):
     window.blit(score_text, score_rect)
     
     # Instrukcja
-    instruction_shadow = PIXEL_FONT.render("Naciśnij ENTER aby wrócić do menu", False, COLOR_BLACK)
-    instruction_text = PIXEL_FONT.render("Naciśnij ENTER aby wrócić do menu", False, COLOR_WHITE)
+    instruction_shadow = PIXEL_FONT.render("Nacisnij ENTER aby wrocic do menu", False, COLOR_BLACK)
+    instruction_text = PIXEL_FONT.render("Nacisnij ENTER aby wrocic do menu", False, COLOR_WHITE)
     instruction_rect = instruction_text.get_rect(center=(WIDTH // 2, HEIGHT // 2 + 100))
     window.blit(instruction_shadow, (instruction_rect.x + 1, instruction_rect.y + 1))
     window.blit(instruction_text, instruction_rect)
@@ -379,20 +392,7 @@ def draw_game_over(window, background, bg_image, score):
     pygame.display.update()
 
 
-def get_background(name):
-    image = pygame.image.load(join("assets", "Background", name))
-    _, _, width, height = image.get_rect()
-    tiles = []
-
-    for i in range(WIDTH // width + 1):
-        for j in range(HEIGHT // height + 1):
-            pos = (i * width, j * height)
-            tiles.append(pos)
-
-    return tiles, image
-
-
-def draw(window, background, bg_image, player, objects, offset_x, score, hearts):
+def draw(window, background, bg_image, player, objects, offset_x, score):
     for tile in background:
         window.blit(bg_image, tile)
 
@@ -401,20 +401,20 @@ def draw(window, background, bg_image, player, objects, offset_x, score, hearts)
 
     player.draw(window, offset_x)
 
+    # Rysowanie serc
+    heart_x = 10
+    heart_y = 40
+    heart_spacing = 30
+    
+    for i in range(player.max_health):
+        filled = i < player.health
+        draw_heart(window, heart_x + i * heart_spacing, heart_y, filled)
+
     shadow = PIXEL_FONT.render("COINS: " + str(score), False, (COLOR_BLACK))
     window.blit(shadow, (12, 12))
 
     score_text = PIXEL_FONT.render("COINS: " + str(score), False, (COLOR_WHITE))
     window.blit(score_text, (10, 10))
-    
-    hearts.draw(window)
-
-    if player.fade_alpha > 0:
-        overlay = pygame.Surface((WIDTH, HEIGHT))
-        overlay.fill((0, 0, 0))
-        overlay.set_alpha(player.fade_alpha)
-        window.blit(overlay, (0, 0))
-
 
     pygame.display.update()
 
@@ -448,7 +448,7 @@ def collide(player, objects, dx):
     return collided_object
 
 
-def handle_move(player, objects, portal1, portal2, hearts):
+def handle_move(player, objects, portal1, portal2):
     keys = pygame.key.get_pressed()
 
     player.x_vel = 0
@@ -465,12 +465,9 @@ def handle_move(player, objects, portal1, portal2, hearts):
     for obj in to_check:
         if obj:
             if obj.name  == "fire":
-                if not player.hit:
-                    player.make_hit()
-                    hearts.set_health(hearts.current_health - 1)
-                    hearts.check_death()
-            elif obj.name == "portal" and not player.disappearing and not player.appearing:
-                    player.start_teleport(obj)
+                player.make_hit()
+            elif obj.name == "portal" and not player.disappearing:
+                player.start_teleport(obj)
 
 
 def collect_coins(player, objects):
@@ -502,8 +499,8 @@ def generate_world(width, height, block_size):
     coins = [Coin(400, HEIGHT - block_size * 3 - 64, 16, 16),
              Coin(700, HEIGHT - block_size * 2 - 80, 16, 16)]
     
-    portal1 = Portal(475, HEIGHT - block_size * 2 - 30, 60, 80, 800, HEIGHT - block_size * 5)
-    portal2 = Portal(650, HEIGHT - block_size * 5 - 30, 60, 80, 400, HEIGHT - block_size * 2)
+    portal1 = Portal(450, HEIGHT - block_size * 2 - 30, 60, 80, 800, HEIGHT - block_size * 5, flip_horizontal=True)
+    portal2 = Portal(650, HEIGHT - block_size * 5 - 30, 60, 80, 375, HEIGHT - block_size * 2)
 
     floor = [Block(i * block_size, HEIGHT - block_size, block_size)
              for i in range(-WIDTH // block_size, (WIDTH * 2) // block_size)]
@@ -530,7 +527,6 @@ def main_game(window):
     scroll_area_width = 400
     score = 0
     game_over = False
-    hearts = Hearts(10, 30, 3)
 
     run = True
     while run:
@@ -544,30 +540,28 @@ def main_game(window):
             if event.type == pygame.KEYDOWN:
                 if game_over:
                     if event.key == pygame.K_RETURN:
-                        return True
+                        return True  # Powrót do menu
                 else:
-                    if event.key == pygame.K_SPACE or event.key == pygame.K_UP or event.key == pygame.K_w and player.jump_count < 2:
+                    if event.key == pygame.K_SPACE or  event.key ==  pygame.K_UP or  event.key ==  pygame.K_w and player.jump_count < 2:
                         player.jump()
+           
                     if event.key == pygame.K_ESCAPE:
-                        return True
+                        return True  # Powrót do menu
 
         if not game_over:
             player.loop(FPS)
-            if player.appearing:
-                offset_x = player.rect.x - WIDTH // 2
-
-
             for obj in objects:
                 if hasattr(obj, "loop"):
                     obj.loop()
 
-            handle_move(player, objects, portal1, portal2, hearts)
+            handle_move(player, objects, portal1, portal2)
             score += collect_coins(player, objects)
             
-            if hearts.dead:
+            # Sprawdź czy gracz stracił wszystkie życia
+            if player.health <= 0:
                 game_over = True
             
-            draw(window, background, bg_image, player, objects, offset_x, score, hearts)
+            draw(window, background, bg_image, player, objects, offset_x, score)
 
             if ((player.rect.right - offset_x >= WIDTH - scroll_area_width) and player.x_vel > 0) or (
                     (player.rect.left - offset_x <= scroll_area_width) and player.x_vel < 0):
@@ -579,6 +573,11 @@ def main_game(window):
 
 
 def main_menu(window):
+    """
+    Wyświetla proste menu główne.
+    Zwraca True, jeśli wybrano "Graj".
+    Zwraca False, jeśli wybrano "Wyjdź" lub zamknięto okno.
+    """
     running = True
     background_tiles, bg_image = get_background("Blue.png")
     clock = pygame.time.Clock()
@@ -603,9 +602,14 @@ def main_menu(window):
                     return False
 
         # Rysowanie tła
-        mm_bg_tiles, mm_bg_img = get_background("Gray.png")
-        for tile in mm_bg_tiles:
-            window.blit(mm_bg_img, tile)
+        for tile in background_tiles:
+            window.blit(bg_image, tile)
+        
+        # Półprzezroczyste tło dla lepszej czytelności
+        overlay = pygame.Surface((WIDTH, HEIGHT))
+        overlay.set_alpha(100)
+        overlay.fill(COLOR_BLACK)
+        window.blit(overlay, (0, 0))
         
         # Tytuł gry
         title_shadow = PIXEL_FONT_LARGE.render("Pixel Climber", True, COLOR_BLACK)
@@ -630,8 +634,8 @@ def main_menu(window):
 
         # Opcja "WYJDŹ"
         quit_color = COLOR_YELLOW if selected_option == 1 else COLOR_LIGHT_GRAY
-        quit_text_shadow = PIXEL_FONT_MEDIUM.render("WYJDŹ", True, COLOR_BLACK)
-        quit_text = PIXEL_FONT_MEDIUM.render("WYJDŹ", True, quit_color)
+        quit_text_shadow = PIXEL_FONT_MEDIUM.render("WYJDZ", True, COLOR_BLACK)
+        quit_text = PIXEL_FONT_MEDIUM.render("WYJDZ", True, quit_color)
         quit_rect = quit_text.get_rect(center=(WIDTH // 2, HEIGHT // 2 + 80))
         
         # Wskaźnik wyboru dla opcji "WYJDŹ"
@@ -645,7 +649,7 @@ def main_menu(window):
         # Instrukcja sterowania
         controls = [
             "STEROWANIE:",
-            "Strzałki / WASD - ruch",
+            "Strzalki / WASD - ruch",
             "SPACJA / Strzałka w górę - skok",
             "ENTER - wybierz"
         ]
@@ -674,6 +678,57 @@ def main(window):
     quit()
 
 
-
 if __name__ == "__main__":
     main(window)
+
+    def main(window):
+    clock = pygame.time.Clock()
+    background, bg_image = get_background("Blue.png")
+
+    block_size = 96
+
+    player, objects, portal1, portal2 = generate_world(WIDTH, HEIGHT, block_size)
+    offset_x = 0
+    scroll_area_width = 400
+    score = 0
+    hearts = Hearts(10, 30, 3)
+
+
+    run = True
+    while run:
+        clock.tick(FPS)
+
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                run = False
+                break
+
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_SPACE and player.jump_count < 2:
+                    player.jump()
+
+        player.loop(FPS)
+        for obj in objects:
+            if hasattr(obj, "loop"):
+                obj.loop()
+
+        handle_move(player, objects, portal1, portal2, hearts)
+        score += collect_coins(player, objects)
+        if hearts.dead:
+            draw_game_over(window, background, bg_image, score)
+
+            keys = pygame.key.get_pressed()
+            if keys[pygame.K_RETURN]:
+                return main(window)
+
+            continue
+        
+        draw(window, background, bg_image, player, objects, offset_x, score, hearts)
+        
+        if ((player.rect.right - offset_x >= WIDTH - scroll_area_width) and player.x_vel > 0) or (
+            (player.rect.left - offset_x <= scroll_area_width) and player.x_vel < 0):
+            offset_x += player.x_vel
+
+    pygame.quit()
+    quit()
+
