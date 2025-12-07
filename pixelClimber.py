@@ -30,10 +30,13 @@ def flip(sprites):
     return [pygame.transform.flip(sprite, True, False) for sprite in sprites]
 
 
-def load_sprite_sheets(dir1, dir2, width, height, direction=False, frames=None):
-    path = join("assets", dir1, dir2)
-    images = [f for f in listdir(path) if isfile(join(path, f))]
+def load_sprite_sheets(dir1, dir2, dir3, width, height, direction=False, frames=None):
+    if dir3 is not None:
+        path = join("assets", dir1, dir2, dir3)
+    else:
+        path = join("assets", dir1, dir2)
 
+    images = [f for f in listdir(path) if isfile(join(path, f))]
     all_sprites = {}
 
     for image in images:
@@ -77,12 +80,13 @@ def get_block(size):
 class Player(pygame.sprite.Sprite):
     COLOR = (255, 0, 0)
     GRAVITY = 1
-    SPRITES = load_sprite_sheets("MainCharacters", "MaskDude", 32, 32, True)
+    SPRITES = load_sprite_sheets("MainCharacters", "MaskDude", None, 32, 32, True)
     ANIMATION_DELAY = 3
 
     def __init__(self, x, y, width, height):
         super().__init__()
-        self.rect = pygame.Rect(x, y, width, height)
+        self.sprite = self.SPRITES["idle_right"][0]
+        self.rect = self.sprite.get_rect(topleft=(x, y))
         self.x_vel = 0
         self.y_vel = 0
         self.mask = None
@@ -163,7 +167,6 @@ class Player(pygame.sprite.Sprite):
         self.update()
 
     def update(self):
-        self.rect = self.sprite.get_rect(topleft=(self.rect.x, self.rect.y))
         self.mask = pygame.mask.from_surface(self.sprite)
 
     def draw(self, win, offset_x):
@@ -228,9 +231,10 @@ class Fire(Object):
 
     def __init__(self, x, y, width, height):
         super().__init__(x, y, width, height, "fire")
-        self.fire = load_sprite_sheets("Traps", "Fire", width, height)
+        self.fire = load_sprite_sheets("Traps", "Fire", None, width, height)
         self.image = self.fire["off"][0]
         self.mask = pygame.mask.from_surface(self.image)
+        self.rect = self.image.get_rect(topleft=(self.rect.x, self.rect.y))
         self.animation_count = 0
         self.animation_name = "off"
 
@@ -245,8 +249,6 @@ class Fire(Object):
         sprite_index = (self.animation_count // self.ANIMATION_DELAY) % len(sprites)
         self.image = sprites[sprite_index]
         self.animation_count += 1
-
-        self.rect = self.image.get_rect(topleft=(self.rect.x, self.rect.y))
         self.mask = pygame.mask.from_surface(self.image)
 
         if self.animation_count // self.ANIMATION_DELAY >= len(sprites):
@@ -258,10 +260,11 @@ class Coin(Object):
 
     def __init__(self, x, y, width, height):
         super().__init__(x, y, width, height, "coin")
-        self.coin = load_sprite_sheets("Items", "Coins", width, height)
+        self.coin = load_sprite_sheets("Items", "Coins", None, width, height)
         self.animation_name = "coin"
         self.image = self.coin[self.animation_name][0]
         self.mask = pygame.mask.from_surface(self.image)
+        self.rect = self.image.get_rect(topleft=(self.rect.x, self.rect.y))
         self.animation_count = 0
 
     def loop(self):
@@ -270,7 +273,6 @@ class Coin(Object):
         self.image = sprites[sprite_index]
         self.animation_count += 1
 
-        self.rect = self.image.get_rect(topleft=(self.rect.x, self.rect.y))
         self.mask = pygame.mask.from_surface(self.image)
 
         if self.animation_count // self.ANIMATION_DELAY >= len(sprites):
@@ -282,7 +284,7 @@ class Portal(Object):
 
     def __init__(self, x, y, width, height, target_x, target_y, flip_horizontal=False):
         super().__init__(x, y, width, height, "portal")
-        self.portal = load_sprite_sheets("Items", "Portals", width, height, False, 8)
+        self.portal = load_sprite_sheets("Items", "Portals", None, width, height, False, 8)
         self.image = self.portal["idle"][0]
         self.animation_count = 0
         self.animation_name = "idle"
@@ -298,7 +300,6 @@ class Portal(Object):
             self.rect.height -20
         )
         
-
     def appear(self):
         self.animation_name = "appear"
 
@@ -324,7 +325,7 @@ class Hearts:
         self.max_hearts = hearts
         self.current_health = hearts * 2
         self.dead = False
-        self.sprites = load_sprite_sheets("Menu", "Hearts", 32, 32, False, 3)["PixelHeart16"]
+        self.sprites = load_sprite_sheets("Menu", "Hearts", None, 32, 32, False, 3)["PixelHeart16"]
 
     def set_health(self, hp):
         self.current_health = max(0, min(hp, self.max_hearts * 2))
@@ -348,19 +349,50 @@ class Hearts:
             self.dead = True
 
 
+class Flag(Object):
+    ANIMATION_DELAY = 2
+    
+    def __init__(self, x, y, width, height):
+        super().__init__(x, y, width, height, "checkpoint")
+        self.checkpoint = load_sprite_sheets("Items", "Checkpoints", "Checkpoint", width, height)
+        self.image = self.checkpoint["CheckpointNo"][0]
+        self.rect = self.image.get_rect(topleft=(self.rect.x, self.rect.y))
+        self.animation_count = 0
+        self.animation_name = "CheckpointNo"
+        self.activated = False
+
+    def finish(self):
+        self.animation_name = "Checkpoint"
+        self.animation_count = 0
+        self.activated = True
+    
+
+    def loop(self):
+        sprites = self.checkpoint[self.animation_name]
+        sprite_index = (self.animation_count // self.ANIMATION_DELAY) % len(sprites)
+        self.image = sprites[sprite_index]
+        self.animation_count += 1
+
+        if self.animation_count >= 52:
+            self.animation_name = "CheckpointYes"
+            self.animation_count = 0
+        if self.animation_count // self.ANIMATION_DELAY >= len(sprites):
+            self.animation_count = 0
+
+
 
 #=======Function========#
-def draw_game_over(window, background, bg_image, score):
+def draw_end_screen(window, background, bg_image, score, message="GAME OVER"):
     go_bg_tiles, go_bg_img = get_background("Gray.png")
     for tile in go_bg_tiles:
         window.blit(go_bg_img, tile)
     
     # Tekst GAME OVER
-    game_over_shadow = PIXEL_FONT_LARGE.render("GAME OVER", False, COLOR_BLACK)
-    game_over_text = PIXEL_FONT_LARGE.render("GAME OVER", False, (255, 50, 50))
-    game_over_rect = game_over_text.get_rect(center=(WIDTH // 2, HEIGHT // 2 - 100))
-    window.blit(game_over_shadow, (game_over_rect.x + 3, game_over_rect.y + 3))
-    window.blit(game_over_text, game_over_rect)
+    message_shadow = PIXEL_FONT_LARGE.render(message, False, COLOR_BLACK)
+    message_text = PIXEL_FONT_LARGE.render(message, False, (255, 50, 50))
+    message_rect = message_text.get_rect(center=(WIDTH // 2, HEIGHT // 2 - 100))
+    window.blit(message_shadow, (message_rect.x + 3, message_rect.y + 3))
+    window.blit(message_text, message_rect)
     
     # Wynik
     score_shadow = PIXEL_FONT_MEDIUM.render(f"COINS: {score}", False, COLOR_BLACK)
@@ -370,8 +402,8 @@ def draw_game_over(window, background, bg_image, score):
     window.blit(score_text, score_rect)
     
     # Instrukcja
-    instruction_shadow = PIXEL_FONT.render("Naciśnij ENTER aby wrócić do menu", False, COLOR_BLACK)
-    instruction_text = PIXEL_FONT.render("Naciśnij ENTER aby wrócić do menu", False, COLOR_WHITE)
+    instruction_shadow = PIXEL_FONT.render("Naciśnij ESC aby wrócić do menu", False, COLOR_BLACK)
+    instruction_text = PIXEL_FONT.render("Naciśnij ESC aby wrócić do menu", False, COLOR_WHITE)
     instruction_rect = instruction_text.get_rect(center=(WIDTH // 2, HEIGHT // 2 + 100))
     window.blit(instruction_shadow, (instruction_rect.x + 1, instruction_rect.y + 1))
     window.blit(instruction_text, instruction_rect)
@@ -471,6 +503,9 @@ def handle_move(player, objects, portal1, portal2, hearts):
                     hearts.check_death()
             elif obj.name == "portal" and not player.disappearing and not player.appearing:
                     player.start_teleport(obj)
+            elif obj.name == "checkpoint":
+                if not obj.activated:
+                    obj.finish()
 
 
 def collect_coins(player, objects):
@@ -516,6 +551,10 @@ def generate_world(width, height, block_size):
                           Block(block_size * 12, HEIGHT - block_size * 3, block_size), fire]
     objects = vertical_blocks + additional_objects + coins + [portal1, portal2]
 
+    flag = Flag(WIDTH * 2 - 100, HEIGHT - (block_size * 1.65) - 64, 64, 64)
+    objects.append(flag)
+
+
     return player, objects, portal1, portal2
 
 
@@ -530,6 +569,8 @@ def main_game(window):
     scroll_area_width = 400
     score = 0
     game_over = False
+    level_completed = False
+    show_end_screen = False
     hearts = Hearts(10, 30, 3)
 
     run = True
@@ -551,7 +592,7 @@ def main_game(window):
                     if event.key == pygame.K_ESCAPE:
                         return True
 
-        if not game_over:
+        if not game_over and not level_completed:
             player.loop(FPS)
             if player.appearing:
                 offset_x = player.rect.x - WIDTH // 2
@@ -567,13 +608,22 @@ def main_game(window):
             if hearts.dead:
                 game_over = True
             
+            level_completed = False
+            for obj in objects:
+                if obj.name == "checkpoint" and obj.animation_name == "CheckpointYes":
+                    level_completed = True
+                    break
+            
             draw(window, background, bg_image, player, objects, offset_x, score, hearts)
 
             if ((player.rect.right - offset_x >= WIDTH - scroll_area_width) and player.x_vel > 0) or (
                     (player.rect.left - offset_x <= scroll_area_width) and player.x_vel < 0):
                 offset_x += player.x_vel
         else:
-            draw_game_over(window, background, bg_image, score)
+            if level_completed:
+                draw_end_screen(window, background, bg_image, score, message="YOU WIN")
+            elif game_over:
+                draw_end_screen(window, background, bg_image, score, message="GAME OVER")
 
     return False
 
