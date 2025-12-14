@@ -587,7 +587,7 @@ def main_game(window):
                     if event.key == pygame.K_RETURN:
                         return True
                 else:
-                    if event.key == pygame.K_SPACE or event.key == pygame.K_UP or event.key == pygame.K_w and player.jump_count < 2:
+                    if (event.key == pygame.K_SPACE or event.key == pygame.K_UP or event.key == pygame.K_w) and player.jump_count < 2:
                         player.jump()
                     if event.key == pygame.K_ESCAPE:
                         return True
